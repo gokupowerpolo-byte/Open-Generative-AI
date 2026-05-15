@@ -21,10 +21,17 @@ const MODELS = [
   { id: "openai-sora-2-pro-text-to-video", name: "Sora 2 Pro", durations: [4, 8, 12] },
 ];
 
+const REF_MODELS = [
+  { id: "kling-v2.6-std-motion-control", name: "Kling 2.6 Std (motion ref)" },
+  { id: "kling-v3.0-std-motion-control", name: "Kling 3.0 Std (motion ref)" },
+  { id: "kling-v3.0-pro-motion-control", name: "Kling 3.0 Pro (motion ref)" },
+];
+
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const RESOLUTIONS = ["480p", "720p", "1080p"];
 
 const KEY_STORAGE = "muapi_key";
+const MAX_REF_VIDEO_MB = 50;
 
 export default function TextToVideo() {
   const [apiKey, setApiKey] = useState("");
@@ -38,7 +45,12 @@ export default function TextToVideo() {
   const [message, setMessage] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [history, setHistory] = useState([]);
+  const [refVideoFile, setRefVideoFile] = useState(null);
+  const [refVideoUrl, setRefVideoUrl] = useState("");
+  const [refModel, setRefModel] = useState(REF_MODELS[2].id);
+  const [uploadPct, setUploadPct] = useState(0);
   const cancelRef = useRef(false);
+  const refInputRef = useRef(null);
 
   useEffect(() => {
     const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : "";
@@ -53,6 +65,71 @@ export default function TextToVideo() {
       setDuration(currentModel.durations[0]);
     }
   }, [model]); // eslint-disable-line
+
+  function uploadReferenceVideo(file) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/api/v1/upload_file");
+      xhr.setRequestHeader("x-api-key", apiKey);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            const url = data.url || data.file_url || data.data?.url;
+            if (!url) return reject(new Error("Upload returned no URL"));
+            resolve(url);
+          } catch (e) {
+            reject(new Error("Failed to parse upload response"));
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      const fd = new FormData();
+      fd.append("file", file);
+      xhr.send(fd);
+    });
+  }
+
+  async function onPickRefVideo(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!apiKey) {
+      setShowKey(true);
+      return;
+    }
+    if (!file.type.startsWith("video/")) {
+      setMessage("Please choose a video file.");
+      return;
+    }
+    if (file.size > MAX_REF_VIDEO_MB * 1024 * 1024) {
+      setMessage(`Reference video must be under ${MAX_REF_VIDEO_MB} MB.`);
+      return;
+    }
+    setRefVideoFile(file);
+    setRefVideoUrl("");
+    setUploadPct(0);
+    setMessage("Uploading reference video…");
+    try {
+      const url = await uploadReferenceVideo(file);
+      setRefVideoUrl(url);
+      setMessage("Reference video ready. Generation will copy its motion/style.");
+    } catch (err) {
+      setRefVideoFile(null);
+      setMessage(err.message || String(err));
+    }
+  }
+
+  function clearRefVideo() {
+    setRefVideoFile(null);
+    setRefVideoUrl("");
+    setUploadPct(0);
+    if (refInputRef.current) refInputRef.current.value = "";
+  }
 
   function saveKey() {
     localStorage.setItem(KEY_STORAGE, apiKey.trim());
@@ -94,13 +171,12 @@ export default function TextToVideo() {
     setVideoUrl("");
     setMessage("Submitting…");
     try {
-      const payload = {
-        prompt: prompt.trim(),
-        aspect_ratio: aspect,
-        duration,
-        resolution,
-      };
-      const res = await fetch(`/api/api/v1/${model}`, {
+      const useRef = !!refVideoUrl;
+      const endpoint = useRef ? refModel : model;
+      const payload = useRef
+        ? { prompt: prompt.trim(), video_url: refVideoUrl }
+        : { prompt: prompt.trim(), aspect_ratio: aspect, duration, resolution };
+      const res = await fetch(`/api/api/v1/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": apiKey },
         body: JSON.stringify(payload),
@@ -117,7 +193,7 @@ export default function TextToVideo() {
       const url = result.outputs?.[0] || result.url || result.output?.url;
       if (!url) throw new Error("No output URL returned");
       setVideoUrl(url);
-      setHistory((h) => [{ url, prompt: prompt.trim(), model, ts: Date.now() }, ...h].slice(0, 12));
+      setHistory((h) => [{ url, prompt: prompt.trim(), model: endpoint, ts: Date.now() }, ...h].slice(0, 12));
       setStatus("done");
       setMessage("Done.");
     } catch (e) {
@@ -174,7 +250,7 @@ export default function TextToVideo() {
           <div style={styles.row}>
             <div style={styles.field}>
               <label style={styles.label}>Model</label>
-              <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.select}>
+              <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
                 {MODELS.map((m) => (
                   <option key={m.id} value={m.id}>{m.name}</option>
                 ))}
@@ -182,22 +258,65 @@ export default function TextToVideo() {
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Aspect</label>
-              <select value={aspect} onChange={(e) => setAspect(e.target.value)} style={styles.select}>
+              <select value={aspect} onChange={(e) => setAspect(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
                 {ASPECT_RATIOS.map((a) => <option key={a} value={a}>{a}</option>)}
               </select>
             </div>
           </div>
 
+          <div style={styles.refBox}>
+            <div style={styles.refHeader}>
+              <label style={{ ...styles.label, marginBottom: 0 }}>Reference video (copy style / motion)</label>
+              {refVideoFile && (
+                <button style={styles.linkBtn} onClick={clearRefVideo} type="button">Remove</button>
+              )}
+            </div>
+            {!refVideoFile ? (
+              <label style={styles.dropZone}>
+                <input
+                  ref={refInputRef}
+                  type="file"
+                  accept="video/*"
+                  onChange={onPickRefVideo}
+                  style={{ display: "none" }}
+                />
+                <span style={{ opacity: 0.7, fontSize: 13 }}>
+                  Click to upload a short reference clip — its motion and pacing will guide the generated video.
+                </span>
+              </label>
+            ) : (
+              <div style={styles.refPreviewWrap}>
+                {refVideoUrl ? (
+                  <video src={refVideoUrl} controls muted style={styles.refPreview} />
+                ) : (
+                  <div style={styles.refPreview}>
+                    <div style={{ padding: 12, fontSize: 13 }}>
+                      Uploading… {uploadPct}%
+                    </div>
+                  </div>
+                )}
+                <div style={styles.field}>
+                  <label style={styles.label}>Reference model</label>
+                  <select value={refModel} onChange={(e) => setRefModel(e.target.value)} style={styles.select}>
+                    {REF_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={styles.row}>
             <div style={styles.field}>
               <label style={styles.label}>Resolution</label>
-              <select value={resolution} onChange={(e) => setResolution(e.target.value)} style={styles.select}>
+              <select value={resolution} onChange={(e) => setResolution(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
                 {RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <div style={styles.field}>
               <label style={styles.label}>Duration (s)</label>
-              <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={styles.select}>
+              <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={styles.select} disabled={!!refVideoUrl}>
                 {currentModel.durations.map((d) => <option key={d} value={d}>{d}s</option>)}
               </select>
             </div>
@@ -207,8 +326,8 @@ export default function TextToVideo() {
             {status === "running" ? (
               <button style={styles.danger} onClick={cancel}>Cancel</button>
             ) : (
-              <button style={styles.primary} onClick={generate} disabled={!prompt.trim()}>
-                Generate video
+              <button style={styles.primary} onClick={generate} disabled={!prompt.trim() || (refVideoFile && !refVideoUrl)}>
+                {refVideoUrl ? "Generate (copy reference style)" : "Generate video"}
               </button>
             )}
             <span style={styles.message}>{message}</span>
@@ -298,4 +417,9 @@ const styles = {
   historyItem: { background: "#11141c", border: "1px solid #1f2330", borderRadius: 10, overflow: "hidden", cursor: "pointer", padding: 0, textAlign: "left", color: "#e5e7eb" },
   historyVideo: { width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block", background: "#000" },
   historyPrompt: { display: "block", fontSize: 12, padding: "6px 8px", color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  refBox: { background: "#11141c", border: "1px solid #1f2330", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 10 },
+  refHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  dropZone: { display: "flex", alignItems: "center", justifyContent: "center", padding: 18, border: "1px dashed #2a2f3d", borderRadius: 8, cursor: "pointer", textAlign: "center" },
+  refPreviewWrap: { display: "flex", flexDirection: "column", gap: 10 },
+  refPreview: { width: "100%", maxHeight: 200, background: "#000", borderRadius: 8, objectFit: "contain" },
 };
