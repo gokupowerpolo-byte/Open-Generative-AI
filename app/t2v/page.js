@@ -1,211 +1,106 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 
-const MODELS = [
-  { id: "seedance-lite-t2v", name: "Seedance Lite", durations: [3, 5, 10] },
-  { id: "seedance-pro-t2v", name: "Seedance Pro", durations: [5, 10] },
-  { id: "seedance-pro-t2v-fast", name: "Seedance Pro Fast", durations: [5, 10] },
-  { id: "seedance-v1.5-pro-t2v", name: "Seedance v1.5 Pro", durations: [5, 10] },
-  { id: "seedance-v2.0-t2v", name: "Seedance v2.0", durations: [5, 10] },
-  { id: "kling-v2.1-master-t2v", name: "Kling v2.1 Master", durations: [5, 10] },
-  { id: "kling-v2.6-pro-t2v", name: "Kling v2.6 Pro", durations: [5, 10] },
-  { id: "veo3-text-to-video", name: "Veo 3", durations: [8] },
-  { id: "veo3-fast-text-to-video", name: "Veo 3 Fast", durations: [8] },
-  { id: "veo3.1-text-to-video", name: "Veo 3.1", durations: [8] },
-  { id: "wan2.5-text-to-video", name: "Wan 2.5", durations: [5, 10] },
-  { id: "wan2.6-text-to-video", name: "Wan 2.6", durations: [5, 10] },
-  { id: "hunyuan-text-to-video", name: "Hunyuan", durations: [5] },
-  { id: "minimax-hailuo-02-pro-t2v", name: "Hailuo 02 Pro", durations: [6, 10] },
-  { id: "openai-sora-2-text-to-video", name: "Sora 2", durations: [4, 8, 12] },
-  { id: "openai-sora-2-pro-text-to-video", name: "Sora 2 Pro", durations: [4, 8, 12] },
+const SERVICES = [
+  {
+    id: "kling",
+    name: "Kling AI",
+    url: "https://klingai.com",
+    quota: "~6 free videos / day",
+    duration: "5–10s",
+    quality: "Excellent — among the best free T2V",
+    notes: "Sign in with Google. Pick Text-to-Video, paste prompt, generate.",
+    color: "linear-gradient(135deg,#22d3ee,#3b82f6)",
+  },
+  {
+    id: "hailuo",
+    name: "Hailuo / MiniMax",
+    url: "https://hailuoai.video",
+    quota: "Daily free quota (refreshes ~24h)",
+    duration: "6s",
+    quality: "Very good motion, photoreal",
+    notes: "Google sign-in. Free tier is generous; quality rivals paid models.",
+    color: "linear-gradient(135deg,#a78bfa,#ec4899)",
+  },
+  {
+    id: "pika",
+    name: "Pika",
+    url: "https://pika.art",
+    quota: "Limited free credits per month",
+    duration: "3–5s",
+    quality: "Stylized, fast",
+    notes: "Discord or Google login. Good for animated / illustrative styles.",
+    color: "linear-gradient(135deg,#f59e0b,#ef4444)",
+  },
+  {
+    id: "runway",
+    name: "Runway",
+    url: "https://runwayml.com",
+    quota: "~125 free credits on signup (one-time)",
+    duration: "5–10s",
+    quality: "Industry-standard Gen-3 / Gen-4",
+    notes: "Free credits don't renew. Use sparingly. Excellent quality.",
+    color: "linear-gradient(135deg,#10b981,#06b6d4)",
+  },
+  {
+    id: "vidu",
+    name: "Vidu",
+    url: "https://www.vidu.com",
+    quota: "Daily free credits",
+    duration: "4–8s",
+    quality: "Good, fast generations",
+    notes: "Google login. Refreshes daily; supports reference images.",
+    color: "linear-gradient(135deg,#8b5cf6,#3b82f6)",
+  },
+  {
+    id: "leonardo",
+    name: "Leonardo Motion",
+    url: "https://leonardo.ai",
+    quota: "150 free tokens / day",
+    duration: "5s",
+    quality: "Image-to-video focused",
+    notes: "Generate an image first (free), then animate it with Motion.",
+    color: "linear-gradient(135deg,#f43f5e,#a855f7)",
+  },
+  {
+    id: "hf",
+    name: "Hugging Face Spaces",
+    url: "https://huggingface.co/spaces?search=text+to+video",
+    quota: "Unlimited but queued",
+    duration: "Varies",
+    quality: "Open-source models (Wan, LTX, CogVideoX)",
+    notes: "Slowest but truly free. Wait times depend on community load.",
+    color: "linear-gradient(135deg,#facc15,#f97316)",
+  },
+  {
+    id: "genmo",
+    name: "Genmo (Mochi 1)",
+    url: "https://www.genmo.ai/play",
+    quota: "Limited free generations",
+    duration: "5s",
+    quality: "Open-source Mochi 1 model",
+    notes: "Hosted version of the open-source Mochi model.",
+    color: "linear-gradient(135deg,#06b6d4,#8b5cf6)",
+  },
 ];
 
-const REF_MODELS = [
-  { id: "kling-v2.6-std-motion-control", name: "Kling 2.6 Std (motion ref)" },
-  { id: "kling-v3.0-std-motion-control", name: "Kling 3.0 Std (motion ref)" },
-  { id: "kling-v3.0-pro-motion-control", name: "Kling 3.0 Pro (motion ref)" },
-];
+const PROMPT_STORAGE = "t2v_last_prompt";
 
-const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
-const RESOLUTIONS = ["480p", "720p", "1080p"];
-
-const KEY_STORAGE = "muapi_key";
-const MAX_REF_VIDEO_MB = 50;
-
-export default function TextToVideo() {
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
+export default function TextToVideoLauncher() {
   const [prompt, setPrompt] = useState("");
-  const [model, setModel] = useState(MODELS[0].id);
-  const [aspect, setAspect] = useState("16:9");
-  const [resolution, setResolution] = useState("720p");
-  const [duration, setDuration] = useState(5);
-  const [status, setStatus] = useState("idle");
-  const [message, setMessage] = useState("");
-  const [videoUrl, setVideoUrl] = useState("");
-  const [history, setHistory] = useState([]);
-  const [refVideoFile, setRefVideoFile] = useState(null);
-  const [refVideoUrl, setRefVideoUrl] = useState("");
-  const [refModel, setRefModel] = useState(REF_MODELS[2].id);
-  const [uploadPct, setUploadPct] = useState(0);
-  const cancelRef = useRef(false);
-  const refInputRef = useRef(null);
+  const [copied, setCopied] = useState("");
 
-  useEffect(() => {
-    const k = typeof window !== "undefined" ? localStorage.getItem(KEY_STORAGE) : "";
-    if (k) setApiKey(k);
-    else setShowKey(true);
-  }, []);
-
-  const currentModel = MODELS.find((m) => m.id === model) || MODELS[0];
-
-  useEffect(() => {
-    if (!currentModel.durations.includes(duration)) {
-      setDuration(currentModel.durations[0]);
-    }
-  }, [model]); // eslint-disable-line
-
-  function uploadReferenceVideo(file) {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/api/v1/upload_file");
-      xhr.setRequestHeader("x-api-key", apiKey);
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) setUploadPct(Math.round((e.loaded / e.total) * 100));
-      };
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            const data = JSON.parse(xhr.responseText);
-            const url = data.url || data.file_url || data.data?.url;
-            if (!url) return reject(new Error("Upload returned no URL"));
-            resolve(url);
-          } catch (e) {
-            reject(new Error("Failed to parse upload response"));
-          }
-        } else {
-          reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
-        }
-      };
-      xhr.onerror = () => reject(new Error("Network error during upload"));
-      const fd = new FormData();
-      fd.append("file", file);
-      xhr.send(fd);
-    });
-  }
-
-  async function onPickRefVideo(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!apiKey) {
-      setShowKey(true);
-      return;
-    }
-    if (!file.type.startsWith("video/")) {
-      setMessage("Please choose a video file.");
-      return;
-    }
-    if (file.size > MAX_REF_VIDEO_MB * 1024 * 1024) {
-      setMessage(`Reference video must be under ${MAX_REF_VIDEO_MB} MB.`);
-      return;
-    }
-    setRefVideoFile(file);
-    setRefVideoUrl("");
-    setUploadPct(0);
-    setMessage("Uploading reference video…");
+  async function copyAndOpen(service) {
     try {
-      const url = await uploadReferenceVideo(file);
-      setRefVideoUrl(url);
-      setMessage("Reference video ready. Generation will copy its motion/style.");
-    } catch (err) {
-      setRefVideoFile(null);
-      setMessage(err.message || String(err));
-    }
-  }
-
-  function clearRefVideo() {
-    setRefVideoFile(null);
-    setRefVideoUrl("");
-    setUploadPct(0);
-    if (refInputRef.current) refInputRef.current.value = "";
-  }
-
-  function saveKey() {
-    localStorage.setItem(KEY_STORAGE, apiKey.trim());
-    document.cookie = `muapi_key=${encodeURIComponent(apiKey.trim())}; path=/; max-age=2592000; SameSite=Lax`;
-    setShowKey(false);
-  }
-
-  async function poll(requestId) {
-    const url = `/api/api/v1/predictions/${requestId}/result`;
-    for (let i = 0; i < 600; i++) {
-      if (cancelRef.current) throw new Error("Cancelled");
-      await new Promise((r) => setTimeout(r, 2000));
-      const res = await fetch(url, { headers: { "x-api-key": apiKey } });
-      if (!res.ok) {
-        if (res.status >= 500) continue;
-        throw new Error(`Poll failed: ${res.status}`);
+      if (prompt.trim()) {
+        await navigator.clipboard.writeText(prompt.trim());
+        setCopied(service.id);
+        setTimeout(() => setCopied(""), 1800);
+        localStorage.setItem(PROMPT_STORAGE, prompt.trim());
       }
-      const data = await res.json();
-      const s = (data.status || "").toLowerCase();
-      setMessage(`Status: ${s || "processing"}…`);
-      if (["completed", "succeeded", "success"].includes(s)) return data;
-      if (["failed", "error"].includes(s))
-        throw new Error(data.error || "Generation failed");
-    }
-    throw new Error("Timed out waiting for video");
-  }
-
-  async function generate() {
-    if (!apiKey) {
-      setShowKey(true);
-      return;
-    }
-    if (!prompt.trim()) {
-      setMessage("Please enter a prompt.");
-      return;
-    }
-    cancelRef.current = false;
-    setStatus("running");
-    setVideoUrl("");
-    setMessage("Submitting…");
-    try {
-      const useRef = !!refVideoUrl;
-      const endpoint = useRef ? refModel : model;
-      const payload = useRef
-        ? { prompt: prompt.trim(), video_url: refVideoUrl }
-        : { prompt: prompt.trim(), aspect_ratio: aspect, duration, resolution };
-      const res = await fetch(`/api/api/v1/${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(`API error ${res.status}: ${t.slice(0, 200)}`);
-      }
-      const submit = await res.json();
-      const requestId = submit.request_id || submit.id;
-      if (!requestId) throw new Error("No request_id returned");
-      setMessage(`Queued as ${requestId.slice(0, 8)}… polling for result.`);
-      const result = await poll(requestId);
-      const url = result.outputs?.[0] || result.url || result.output?.url;
-      if (!url) throw new Error("No output URL returned");
-      setVideoUrl(url);
-      setHistory((h) => [{ url, prompt: prompt.trim(), model: endpoint, ts: Date.now() }, ...h].slice(0, 12));
-      setStatus("done");
-      setMessage("Done.");
-    } catch (e) {
-      setStatus("error");
-      setMessage(e.message || String(e));
-    }
-  }
-
-  function cancel() {
-    cancelRef.current = true;
-    setStatus("idle");
-    setMessage("Cancelled.");
+    } catch {}
+    window.open(service.url, "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -213,176 +108,78 @@ export default function TextToVideo() {
       <header style={styles.header}>
         <div style={styles.brand}>
           <span style={styles.logoDot} />
-          <strong>Text → Video</strong>
-          <span style={styles.tag}>Open Generative AI</span>
+          <strong>Free Text → Video</strong>
+          <span style={styles.tag}>launcher</span>
         </div>
-        <button style={styles.linkBtn} onClick={() => setShowKey(true)}>
-          {apiKey ? "Change API key" : "Set API key"}
-        </button>
+        <a href="/studio" style={styles.linkBtn}>Full studio →</a>
       </header>
 
-      {showKey && (
-        <div style={styles.keyBar}>
-          <input
-            type="password"
-            placeholder="Enter your MUAPI key (stored in your browser)"
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            style={styles.keyInput}
-          />
-          <button style={styles.primary} onClick={saveKey} disabled={!apiKey.trim()}>
-            Save
-          </button>
-        </div>
-      )}
+      <section style={styles.hero}>
+        <h1 style={styles.h1}>Generate videos for free</h1>
+        <p style={styles.sub}>
+          Type your prompt once, then launch any of these services with it copied
+          to your clipboard. Each has a free tier — no API key needed.
+        </p>
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          placeholder="A neon-lit Tokyo alley in the rain, cinematic, slow dolly forward…"
+          style={styles.textarea}
+          rows={4}
+        />
+        <p style={styles.hint}>
+          Click any service below — your prompt is copied to the clipboard so you
+          can paste it (Ctrl/⌘ + V) into their text box.
+        </p>
+      </section>
 
-      <main style={styles.main}>
-        <section style={styles.left}>
-          <label style={styles.label}>Prompt</label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="A neon-lit Tokyo alley in the rain, cinematic, slow dolly forward…"
-            style={styles.textarea}
-            rows={6}
-          />
-
-          <div style={styles.row}>
-            <div style={styles.field}>
-              <label style={styles.label}>Model</label>
-              <select value={model} onChange={(e) => setModel(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
-                {MODELS.map((m) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
+      <section style={styles.grid}>
+        {SERVICES.map((s) => (
+          <button
+            key={s.id}
+            style={styles.card}
+            onClick={() => copyAndOpen(s)}
+            type="button"
+          >
+            <div style={{ ...styles.cardHeader, background: s.color }}>
+              <span style={styles.cardName}>{s.name}</span>
+              <span style={styles.cardOpen}>open ↗</span>
             </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Aspect</label>
-              <select value={aspect} onChange={(e) => setAspect(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
-                {ASPECT_RATIOS.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={styles.refBox}>
-            <div style={styles.refHeader}>
-              <label style={{ ...styles.label, marginBottom: 0 }}>Reference video (copy style / motion)</label>
-              {refVideoFile && (
-                <button style={styles.linkBtn} onClick={clearRefVideo} type="button">Remove</button>
+            <div style={styles.cardBody}>
+              <div style={styles.cardRow}>
+                <span style={styles.cardLabel}>Free</span>
+                <span style={styles.cardValue}>{s.quota}</span>
+              </div>
+              <div style={styles.cardRow}>
+                <span style={styles.cardLabel}>Length</span>
+                <span style={styles.cardValue}>{s.duration}</span>
+              </div>
+              <div style={styles.cardRow}>
+                <span style={styles.cardLabel}>Quality</span>
+                <span style={styles.cardValue}>{s.quality}</span>
+              </div>
+              <p style={styles.cardNotes}>{s.notes}</p>
+              {copied === s.id && (
+                <div style={styles.copied}>✓ Prompt copied — paste it on their page</div>
               )}
             </div>
-            {!refVideoFile ? (
-              <label style={styles.dropZone}>
-                <input
-                  ref={refInputRef}
-                  type="file"
-                  accept="video/*"
-                  onChange={onPickRefVideo}
-                  style={{ display: "none" }}
-                />
-                <span style={{ opacity: 0.7, fontSize: 13 }}>
-                  Click to upload a short reference clip — its motion and pacing will guide the generated video.
-                </span>
-              </label>
-            ) : (
-              <div style={styles.refPreviewWrap}>
-                {refVideoUrl ? (
-                  <video src={refVideoUrl} controls muted style={styles.refPreview} />
-                ) : (
-                  <div style={styles.refPreview}>
-                    <div style={{ padding: 12, fontSize: 13 }}>
-                      Uploading… {uploadPct}%
-                    </div>
-                  </div>
-                )}
-                <div style={styles.field}>
-                  <label style={styles.label}>Reference model</label>
-                  <select value={refModel} onChange={(e) => setRefModel(e.target.value)} style={styles.select}>
-                    {REF_MODELS.map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
+          </button>
+        ))}
+      </section>
 
-          <div style={styles.row}>
-            <div style={styles.field}>
-              <label style={styles.label}>Resolution</label>
-              <select value={resolution} onChange={(e) => setResolution(e.target.value)} style={styles.select} disabled={!!refVideoUrl}>
-                {RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div style={styles.field}>
-              <label style={styles.label}>Duration (s)</label>
-              <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} style={styles.select} disabled={!!refVideoUrl}>
-                {currentModel.durations.map((d) => <option key={d} value={d}>{d}s</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div style={styles.actions}>
-            {status === "running" ? (
-              <button style={styles.danger} onClick={cancel}>Cancel</button>
-            ) : (
-              <button style={styles.primary} onClick={generate} disabled={!prompt.trim() || (refVideoFile && !refVideoUrl)}>
-                {refVideoUrl ? "Generate (copy reference style)" : "Generate video"}
-              </button>
-            )}
-            <span style={styles.message}>{message}</span>
-          </div>
-        </section>
-
-        <section style={styles.right}>
-          <div style={styles.preview}>
-            {videoUrl ? (
-              <video src={videoUrl} controls autoPlay loop style={styles.video} />
-            ) : (
-              <div style={styles.placeholder}>
-                {status === "running" ? <Spinner /> : <span>Your video will appear here</span>}
-              </div>
-            )}
-          </div>
-          {videoUrl && (
-            <a href={videoUrl} download style={styles.download}>Download video ↓</a>
-          )}
-
-          {history.length > 0 && (
-            <>
-              <h3 style={styles.historyTitle}>Recent</h3>
-              <div style={styles.historyGrid}>
-                {history.map((h) => (
-                  <button
-                    key={h.ts}
-                    style={styles.historyItem}
-                    onClick={() => setVideoUrl(h.url)}
-                    title={h.prompt}
-                  >
-                    <video src={h.url} muted style={styles.historyVideo} />
-                    <span style={styles.historyPrompt}>{h.prompt.slice(0, 50)}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </section>
-      </main>
-    </div>
-  );
-}
-
-function Spinner() {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <div style={{
-        width: 36, height: 36, borderRadius: "50%",
-        border: "3px solid rgba(255,255,255,0.15)",
-        borderTopColor: "#22d3ee",
-        animation: "spin 1s linear infinite",
-      }} />
-      <span style={{ opacity: 0.7 }}>Generating… this can take 1–5 minutes</span>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <section style={styles.footer}>
+        <h3 style={styles.h3}>Want it fully free with no quotas?</h3>
+        <p style={styles.sub}>
+          Run an open-source model locally with{" "}
+          <a href="https://github.com/comfyanonymous/ComfyUI" target="_blank" rel="noopener noreferrer" style={styles.link}>
+            ComfyUI
+          </a>{" "}
+          — needs a GPU with 12GB+ VRAM. Best free models today:{" "}
+          <strong>Wan 2.1</strong>, <strong>LTX-Video</strong>,{" "}
+          <strong>HunyuanVideo</strong>, <strong>CogVideoX</strong>,{" "}
+          <strong>Mochi 1</strong>.
+        </p>
+      </section>
     </div>
   );
 }
@@ -393,33 +190,24 @@ const styles = {
   brand: { display: "flex", alignItems: "center", gap: 10, fontSize: 16 },
   logoDot: { width: 10, height: 10, borderRadius: "50%", background: "linear-gradient(135deg,#22d3ee,#a78bfa)" },
   tag: { fontSize: 12, opacity: 0.6, marginLeft: 8 },
-  linkBtn: { background: "transparent", color: "#9ca3af", border: "1px solid #2a2f3d", padding: "6px 12px", borderRadius: 8, cursor: "pointer" },
-  keyBar: { display: "flex", gap: 8, padding: "12px 24px", background: "#11141c", borderBottom: "1px solid #1f2330" },
-  keyInput: { flex: 1, background: "#0b0d12", color: "#e5e7eb", border: "1px solid #2a2f3d", borderRadius: 8, padding: "8px 12px", fontSize: 14 },
-  main: { display: "grid", gridTemplateColumns: "minmax(320px, 420px) 1fr", gap: 24, padding: 24, maxWidth: 1400, margin: "0 auto" },
-  left: { display: "flex", flexDirection: "column", gap: 14 },
-  right: { display: "flex", flexDirection: "column", gap: 14 },
-  label: { fontSize: 12, textTransform: "uppercase", letterSpacing: 0.5, color: "#9ca3af", marginBottom: 6 },
-  textarea: { width: "100%", background: "#11141c", color: "#e5e7eb", border: "1px solid #2a2f3d", borderRadius: 10, padding: 12, fontSize: 14, resize: "vertical", fontFamily: "inherit" },
-  row: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 },
-  field: { display: "flex", flexDirection: "column" },
-  select: { background: "#11141c", color: "#e5e7eb", border: "1px solid #2a2f3d", borderRadius: 8, padding: "8px 10px", fontSize: 14 },
-  actions: { display: "flex", alignItems: "center", gap: 12, marginTop: 8 },
-  primary: { background: "linear-gradient(135deg,#22d3ee,#a78bfa)", color: "#0b0d12", border: "none", padding: "10px 16px", borderRadius: 10, fontWeight: 600, cursor: "pointer", fontSize: 14 },
-  danger: { background: "#ef4444", color: "white", border: "none", padding: "10px 16px", borderRadius: 10, fontWeight: 600, cursor: "pointer" },
-  message: { fontSize: 13, color: "#9ca3af" },
-  preview: { aspectRatio: "16/9", background: "#11141c", border: "1px solid #1f2330", borderRadius: 12, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" },
-  placeholder: { color: "#6b7280", fontSize: 14 },
-  video: { width: "100%", height: "100%", objectFit: "contain", background: "#000" },
-  download: { color: "#22d3ee", fontSize: 14, textDecoration: "none" },
-  historyTitle: { fontSize: 13, color: "#9ca3af", textTransform: "uppercase", letterSpacing: 0.5, margin: "8px 0 0" },
-  historyGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 },
-  historyItem: { background: "#11141c", border: "1px solid #1f2330", borderRadius: 10, overflow: "hidden", cursor: "pointer", padding: 0, textAlign: "left", color: "#e5e7eb" },
-  historyVideo: { width: "100%", aspectRatio: "16/9", objectFit: "cover", display: "block", background: "#000" },
-  historyPrompt: { display: "block", fontSize: 12, padding: "6px 8px", color: "#9ca3af", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  refBox: { background: "#11141c", border: "1px solid #1f2330", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 10 },
-  refHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
-  dropZone: { display: "flex", alignItems: "center", justifyContent: "center", padding: 18, border: "1px dashed #2a2f3d", borderRadius: 8, cursor: "pointer", textAlign: "center" },
-  refPreviewWrap: { display: "flex", flexDirection: "column", gap: 10 },
-  refPreview: { width: "100%", maxHeight: 200, background: "#000", borderRadius: 8, objectFit: "contain" },
+  linkBtn: { background: "transparent", color: "#9ca3af", border: "1px solid #2a2f3d", padding: "6px 12px", borderRadius: 8, cursor: "pointer", textDecoration: "none", fontSize: 14 },
+  hero: { maxWidth: 800, margin: "0 auto", padding: "40px 24px 24px", textAlign: "center" },
+  h1: { fontSize: 36, fontWeight: 700, margin: "0 0 12px", background: "linear-gradient(135deg,#22d3ee,#a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" },
+  h3: { fontSize: 18, margin: "0 0 8px", color: "#e5e7eb" },
+  sub: { fontSize: 15, color: "#9ca3af", margin: "0 0 24px", lineHeight: 1.6 },
+  textarea: { width: "100%", background: "#11141c", color: "#e5e7eb", border: "1px solid #2a2f3d", borderRadius: 12, padding: 14, fontSize: 15, resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" },
+  hint: { fontSize: 13, color: "#6b7280", margin: "12px 0 0" },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16, padding: "12px 24px 32px", maxWidth: 1400, margin: "0 auto" },
+  card: { background: "#11141c", border: "1px solid #1f2330", borderRadius: 14, overflow: "hidden", cursor: "pointer", textAlign: "left", color: "#e5e7eb", padding: 0, transition: "transform 0.15s, border-color 0.15s", fontFamily: "inherit" },
+  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 18px", color: "#0b0d12", fontWeight: 600 },
+  cardName: { fontSize: 18 },
+  cardOpen: { fontSize: 12, opacity: 0.85 },
+  cardBody: { padding: 16, display: "flex", flexDirection: "column", gap: 8 },
+  cardRow: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, fontSize: 13 },
+  cardLabel: { color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.5, fontSize: 11 },
+  cardValue: { color: "#e5e7eb", textAlign: "right" },
+  cardNotes: { fontSize: 13, color: "#9ca3af", margin: "8px 0 0", lineHeight: 1.5 },
+  copied: { marginTop: 10, padding: "6px 10px", background: "rgba(34,211,238,0.12)", border: "1px solid rgba(34,211,238,0.3)", borderRadius: 8, fontSize: 12, color: "#22d3ee" },
+  footer: { maxWidth: 800, margin: "0 auto", padding: "16px 24px 48px", textAlign: "center", borderTop: "1px solid #1f2330" },
+  link: { color: "#22d3ee", textDecoration: "none" },
 };
